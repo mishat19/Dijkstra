@@ -1,4 +1,6 @@
-﻿class Station
+﻿using MySql.Data.MySqlClient;
+
+class Station
 {
     public string Nom { get; set; }
 
@@ -70,6 +72,13 @@ class Graphe
 
 class Dijkstra
 {
+    /// <summary>
+    /// Fonction permettant de calculer les chemins les plus courts à partir d'une station de départ
+    /// </summary>
+    /// <param name="graphe">Graphe des stations</param>
+    /// <param name="depart">Station de départ</param>
+    /// <param name="predecesseurs">Stations avant la station de départ</param>
+    /// <returns></returns>
     public static Dictionary<Station, int> CalculerChemins(Graphe graphe, Station depart, out Dictionary<Station, Station> predecesseurs)
     {
         var distances = new Dictionary<Station, int>();
@@ -106,6 +115,12 @@ class Dijkstra
         return distances;
     }
 
+    /// <summary>
+    /// Fonction permettant de trouver le chemin le plus court à partir des prédecesseurs
+    /// </summary>
+    /// <param name="arrivee">Station d'arrivé</param>
+    /// <param name="predecesseurs">Station avant la station de départ</param>
+    /// <returns></returns>
     public static List<Station> TrouverChemin(Station arrivee, Dictionary<Station, Station> predecesseurs)
     {
         var chemin = new List<Station>();
@@ -123,36 +138,93 @@ class Dijkstra
     }
 }
 
+class ChargeurGrapheDepuisMySQL
+{
+    public static Graphe Charger(string chaineConnexion)
+    {
+        var graphe = new Graphe();
+        var stations = new Dictionary<int, Station>();
+
+        using (var connexion = new MySqlConnection(chaineConnexion))
+        {
+            connexion.Open();
+
+            // Charger les stations
+            var commandeStation = new MySqlCommand("SELECT NumStation, NomStation FROM Station", connexion);
+            using (var lecteur = commandeStation.ExecuteReader())
+            {
+                while (lecteur.Read())
+                {
+                    int id = lecteur.GetInt32("NumStation");
+                    string nom = lecteur.GetString("NomStation");
+
+                    var station = new Station(nom);
+                    graphe.AjouterStation(station);
+                    stations[id] = station;
+                }
+            }
+
+            // Charger les segments (trajets)
+            var commandeSegment = new MySqlCommand("SELECT NumStationA, NumStationB, DureeSegment FROM Segment", connexion);
+            using (var lecteur = commandeSegment.ExecuteReader())
+            {
+                while (lecteur.Read())
+                {
+                    int idA = lecteur.GetInt32("NumStationA");
+                    int idB = lecteur.GetInt32("NumStationB");
+                    int duree = lecteur.GetInt32("DureeSegment");
+
+                    if (stations.ContainsKey(idA) && stations.ContainsKey(idB))
+                    {
+                        var stationA = stations[idA];
+                        var stationB = stations[idB];
+
+                        // Uniquement dans un sens (pas bidirectionnel comme tu l'as demandé)
+                        graphe.AjouterTrajet(stationA, stationB, duree);
+                    }
+                }
+            }
+        }
+
+        return graphe;
+    }
+}
+
+
 class Program
 {
     static void Main(string[] args)
     {
-        var graphe = new Graphe();
+        string serveur = "10.1.139.236";
+        string login = "b3";
+        string mdp = "mdp";
+        string bd = "baseb3";
 
-        var a = new Station("A");
-        var b = new Station("B");
-        var c = new Station("C");
-        var d = new Station("D");
+        string chaineConnexion = $"server={serveur};uid={login};pwd={mdp};database={bd}";
+        var graphe = ChargeurGrapheDepuisMySQL.Charger(chaineConnexion);
 
-        graphe.AjouterStation(a);
-        graphe.AjouterStation(b);
-        graphe.AjouterStation(c);
-        graphe.AjouterStation(d);
+        // On saisit les stations de départ et d'arrivée
+        var depart = graphe.Stations.FirstOrDefault(s => s.Nom == "Pagano");
+        var arrivee = graphe.Stations.FirstOrDefault(s => s.Nom == "Pasteur");
 
-        graphe.AjouterTrajet(a, b, 60);   // 1 min
-        graphe.AjouterTrajet(b, c, 90);   // 1 min 30
-        graphe.AjouterTrajet(a, c, 10);  // 5 min
-        graphe.AjouterTrajet(c, d, 120);  // 2 min
+        // Si la station de départ/d'arrivée n'existe pas, on affiche un message d'erreur
+        if (depart == null || arrivee == null)
+        {
+            Console.WriteLine("Stations non trouvées.");
+            return;
+        }
 
-        var distances = Dijkstra.CalculerChemins(graphe, a, out var predecesseurs);
-        var chemin = Dijkstra.TrouverChemin(d, predecesseurs);
+        // On calcule et cherche le chemin
+        var distances = Dijkstra.CalculerChemins(graphe, depart, out var predecesseurs);
+        var chemin = Dijkstra.TrouverChemin(arrivee, predecesseurs);
 
-        Console.WriteLine("Chemin le plus court de A à D :");
+        // Retourne le resultat
+        Console.WriteLine($"Chemin le plus court de {depart.Nom} à {arrivee.Nom} :");
         foreach (var station in chemin)
         {
             Console.Write(station.Nom + " ");
         }
 
-        Console.WriteLine($"\nDurée totale : {distances[d]} secondes");
+        Console.WriteLine($"\nDurée totale : {distances[arrivee]} secondes");
     }
 }
