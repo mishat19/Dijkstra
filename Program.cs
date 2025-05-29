@@ -2,6 +2,10 @@
 {
     public string Nom { get; set; }
 
+    /// <summary>
+    /// Objet permettant de crée un objet station
+    /// </summary>
+    /// <param name="nom">Nom de la station</param>
     public Station(string nom)
     {
         Nom = nom;
@@ -14,6 +18,12 @@ class Trajet
     public Station Arrivee { get; set; }
     public int DureeEnSecondes { get; set; }
 
+    /// <summary>
+    /// Objet permettant de crée un objet trajet
+    /// </summary>
+    /// <param name="depart">La station de départ du trajet</param>
+    /// <param name="arrivee">La station d'arriver du trajet</param>
+    /// <param name="duree">La durée du trajet</param>
     public Trajet(Station depart, Station arrivee, int duree)
     {
         Depart = depart;
@@ -27,16 +37,31 @@ class Graphe
     public List<Station> Stations { get; set; } = new List<Station>();
     public List<Trajet> Trajets { get; set; } = new List<Trajet>();
 
+    /// <summary>
+    /// Fonction permettant d'ajouter une station au graphe
+    /// </summary>
+    /// <param name="station">Objet station qui contient les informations de la station</param>
     public void AjouterStation(Station station)
     {
         Stations.Add(station);
     }
 
+    /// <summary>
+    /// Fonction permettant d'ajouter un trajet au graphe de type Trajet
+    /// </summary>
+    /// <param name="depart"></param>
+    /// <param name="arrivee"></param>
+    /// <param name="duree"></param>
     public void AjouterTrajet(Station depart, Station arrivee, int duree)
     {
         Trajets.Add(new Trajet(depart, arrivee, duree));
     }
 
+    /// <summary>
+    /// Fonction permettant d'obtenir tous les trajets depuis une station donnée
+    /// </summary>
+    /// <param name="station">Objet station ayant les information des station</param>
+    /// <returns>Retourne le fichier le plus court</returns>
     public List<Trajet> ObtenirTrajetsDepuis(Station station)
     {
         return Trajets.Where(t => t.Depart == station).ToList();
