@@ -1,13 +1,12 @@
-﻿using MySql.Data.MySqlClient;
+﻿// ============================
+// CLASSES METIER
+// ============================
+using MySql.Data.MySqlClient;
 
 class Station
 {
     public string Nom { get; set; }
 
-    /// <summary>
-    /// Objet permettant de crée un objet station
-    /// </summary>
-    /// <param name="nom">Nom de la station</param>
     public Station(string nom)
     {
         Nom = nom;
@@ -19,18 +18,14 @@ class Trajet
     public Station Depart { get; set; }
     public Station Arrivee { get; set; }
     public int DureeEnSecondes { get; set; }
+    public List<int> Lignes { get; set; }
 
-    /// <summary>
-    /// Objet permettant de crée un objet trajet
-    /// </summary>
-    /// <param name="depart">La station de départ du trajet</param>
-    /// <param name="arrivee">La station d'arriver du trajet</param>
-    /// <param name="duree">La durée du trajet</param>
-    public Trajet(Station depart, Station arrivee, int duree)
+    public Trajet(Station depart, Station arrivee, int duree, List<int> lignes)
     {
         Depart = depart;
         Arrivee = arrivee;
         DureeEnSecondes = duree;
+        Lignes = lignes;
     }
 }
 
@@ -39,31 +34,16 @@ class Graphe
     public List<Station> Stations { get; set; } = new List<Station>();
     public List<Trajet> Trajets { get; set; } = new List<Trajet>();
 
-    /// <summary>
-    /// Fonction permettant d'ajouter une station au graphe
-    /// </summary>
-    /// <param name="station">Objet station qui contient les informations de la station</param>
     public void AjouterStation(Station station)
     {
         Stations.Add(station);
     }
 
-    /// <summary>
-    /// Fonction permettant d'ajouter un trajet au graphe de type Trajet
-    /// </summary>
-    /// <param name="depart"></param>
-    /// <param name="arrivee"></param>
-    /// <param name="duree"></param>
-    public void AjouterTrajet(Station depart, Station arrivee, int duree)
+    public void AjouterTrajet(Station depart, Station arrivee, int duree, List<int> lignes)
     {
-        Trajets.Add(new Trajet(depart, arrivee, duree));
+        Trajets.Add(new Trajet(depart, arrivee, duree, lignes));
     }
 
-    /// <summary>
-    /// Fonction permettant d'obtenir tous les trajets depuis une station donnée
-    /// </summary>
-    /// <param name="station">Objet station ayant les information des station</param>
-    /// <returns>Retourne le fichier le plus court</returns>
     public List<Trajet> ObtenirTrajetsDepuis(Station station)
     {
         return Trajets.Where(t => t.Depart == station).ToList();
@@ -72,20 +52,12 @@ class Graphe
 
 class Dijkstra
 {
-    /// <summary>
-    /// Fonction permettant de calculer les chemins les plus courts à partir d'une station de départ
-    /// </summary>
-    /// <param name="graphe">Graphe des stations</param>
-    /// <param name="depart">Station de départ</param>
-    /// <param name="predecesseurs">Stations avant la station de départ</param>
-    /// <returns></returns>
     public static Dictionary<Station, int> CalculerChemins(Graphe graphe, Station depart, out Dictionary<Station, Station> predecesseurs)
     {
         var distances = new Dictionary<Station, int>();
         predecesseurs = new Dictionary<Station, Station>();
         var aVisiter = new List<Station>();
 
-        // Initialiser les distances
         foreach (var station in graphe.Stations)
         {
             distances[station] = int.MaxValue;
@@ -96,7 +68,6 @@ class Dijkstra
 
         while (aVisiter.Count > 0)
         {
-            // Station avec la plus petite distance
             var stationActuelle = aVisiter.OrderBy(s => distances[s]).First();
             aVisiter.Remove(stationActuelle);
 
@@ -115,12 +86,6 @@ class Dijkstra
         return distances;
     }
 
-    /// <summary>
-    /// Fonction permettant de trouver le chemin le plus court à partir des prédecesseurs
-    /// </summary>
-    /// <param name="arrivee">Station d'arrivé</param>
-    /// <param name="predecesseurs">Station avant la station de départ</param>
-    /// <returns></returns>
     public static List<Station> TrouverChemin(Station arrivee, Dictionary<Station, Station> predecesseurs)
     {
         var chemin = new List<Station>();
@@ -149,7 +114,6 @@ class ChargeurGrapheDepuisMySQL
         {
             connexion.Open();
 
-            // Charger les stations
             var commandeStation = new MySqlCommand("SELECT NumStation, NomStation FROM Station", connexion);
             using (var lecteur = commandeStation.ExecuteReader())
             {
@@ -164,23 +128,37 @@ class ChargeurGrapheDepuisMySQL
                 }
             }
 
-            // Charger les segments (trajets)
-            var commandeSegment = new MySqlCommand("SELECT NumStationA, NumStationB, DureeSegment FROM Segment", connexion);
+            var commandeSegment = new MySqlCommand(@"
+                SELECT s.NumStationA, s.NumStationB, s.DureeSegment, l.NumLigne
+                FROM Segment s
+                JOIN Ligne l ON s.NumSegment = l.NumSegment", connexion);
+
             using (var lecteur = commandeSegment.ExecuteReader())
             {
+                var trajetsTemp = new Dictionary<(int, int), (int duree, List<int> lignes)>();
+
                 while (lecteur.Read())
                 {
                     int idA = lecteur.GetInt32("NumStationA");
                     int idB = lecteur.GetInt32("NumStationB");
                     int duree = lecteur.GetInt32("DureeSegment");
+                    int numLigne = lecteur.GetInt32("NumLigne");
+
+                    var cle = (idA, idB);
+                    if (!trajetsTemp.ContainsKey(cle))
+                        trajetsTemp[cle] = (duree, new List<int>());
+
+                    trajetsTemp[cle].lignes.Add(numLigne);
+                }
+
+                foreach (var kvp in trajetsTemp)
+                {
+                    var (idA, idB) = kvp.Key;
+                    var (duree, lignes) = kvp.Value;
 
                     if (stations.ContainsKey(idA) && stations.ContainsKey(idB))
                     {
-                        var stationA = stations[idA];
-                        var stationB = stations[idB];
-
-                        // Uniquement dans un sens (pas bidirectionnel comme tu l'as demandé)
-                        graphe.AjouterTrajet(stationA, stationB, duree);
+                        graphe.AjouterTrajet(stations[idA], stations[idB], duree, lignes);
                     }
                 }
             }
@@ -189,7 +167,6 @@ class ChargeurGrapheDepuisMySQL
         return graphe;
     }
 }
-
 
 class Program
 {
@@ -203,26 +180,41 @@ class Program
         string chaineConnexion = $"server={serveur};uid={login};pwd={mdp};database={bd}";
         var graphe = ChargeurGrapheDepuisMySQL.Charger(chaineConnexion);
 
-        // On saisit les stations de départ et d'arrivée
-        var depart = graphe.Stations.FirstOrDefault(s => s.Nom == "Pagano");
-        var arrivee = graphe.Stations.FirstOrDefault(s => s.Nom == "Pasteur");
+        var depart = graphe.Stations.FirstOrDefault(s => s.Nom == "Romolo");
+        var arrivee = graphe.Stations.FirstOrDefault(s => s.Nom == "Cordusio");
 
-        // Si la station de départ/d'arrivée n'existe pas, on affiche un message d'erreur
         if (depart == null || arrivee == null)
         {
             Console.WriteLine("Stations non trouvées.");
             return;
         }
 
-        // On calcule et cherche le chemin
         var distances = Dijkstra.CalculerChemins(graphe, depart, out var predecesseurs);
         var chemin = Dijkstra.TrouverChemin(arrivee, predecesseurs);
 
-        // Retourne le resultat
         Console.WriteLine($"Chemin le plus court de {depart.Nom} à {arrivee.Nom} :");
-        foreach (var station in chemin)
+
+        int? lignePrecedente = null;
+        for (int i = 0; i < chemin.Count - 1; i++)
         {
-            Console.Write(station.Nom + " ");
+            var stationA = chemin[i];
+            var stationB = chemin[i + 1];
+
+            var trajet = graphe.Trajets.FirstOrDefault(t => t.Depart == stationA && t.Arrivee == stationB);
+            if (trajet != null)
+            {
+                int ligneActuelle = trajet.Lignes.First();
+
+                if (ligneActuelle != lignePrecedente)
+                {
+                    if (lignePrecedente != null)
+                        Console.WriteLine("↳ Changement de ligne");
+                    Console.WriteLine($"Prendre la ligne {ligneActuelle}");
+                    lignePrecedente = ligneActuelle;
+                }
+
+                Console.WriteLine($" → {stationB.Nom}");
+            }
         }
 
         Console.WriteLine($"\nDurée totale : {distances[arrivee]} secondes");
